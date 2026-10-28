@@ -16,9 +16,20 @@ npm run dev
 # 3. Build for production
 npm run build
 npm start
+
+# 4. Automated E2E verification (server must be running; uses local Chrome with fake media devices)
+npm install --no-save puppeteer-core
+node e2e-verify.mjs      # 20 checks: 2-peer WebRTC call, lobby, admit, chat, whiteboard sync, AI summary
+node e2e-signaling.mjs   # 16 checks: full Socket.io signaling protocol contract
+node e2e-features.mjs    # 28 checks: settings, device pickers, dropdown geometry, whiteboard nib accuracy, mobile viewport
+node e2e-ai-notes.mjs    # 6 checks: AI Notes panel, on-demand summary, post-call modal, exit-to-home
 ```
 
+**Optional Gemini summaries:** copy `.env.example` to `.env.local` and set `GEMINI_API_KEY=AIza...` (or paste a key into the AI Notes tab at runtime). Model defaults to `gemini-2.5-flash`; override with `GEMINI_MODEL`. Without a key the route returns a complete `smart-local` summary — AI Notes is fully usable with no setup. `.env*.local` is git-ignored.
+
 Once started, the application is live at `http://localhost:3000`.
+
+**Hosting:** Vercel cannot run `server.js` (no long-lived WebSockets in serverless functions). Host signaling on Render/Railway (build `npm install && npm run build`, start `npm start`), then deploy the frontend to Vercel with `NEXT_PUBLIC_SIGNALING_URL` pointing at that host. Local dev keeps same-origin signaling when the variable is unset. See [README.md](README.md).
 
 ---
 
@@ -40,21 +51,30 @@ e:\Projects\milo\
 ├── app/
 │   ├── globals.css                  # Google Meet Material 3 Dark theme, animations, grid classes
 │   ├── layout.jsx                   # Root layout, fonts, and Indian regional SEO metadata
+│   ├── icon.svg                     # Milo brand favicon (auto-served by App Router)
 │   ├── page.jsx                     # Milo home page (New Meeting, Join Code, Feature Carousel)
 │   ├── meet/[id]/page.jsx           # Core meeting room orchestrator & WebRTC connection hub
-│   └── api/summary/route.js         # Gemini 1.5 Flash API + smart NLP meeting summary route
+│   └── api/summary/route.js         # Gemini Flash API (configurable model) + smart NLP summary route
 │
 ├── components/
 │   ├── VideoGrid.jsx                # Responsive video grid, active speaker detection, pin, screen share
-│   ├── ControlBar.jsx               # Floating bottom pill bar (Mic, Cam, CC, Reactions, Whiteboard, Leave)
+│   ├── ControlBar.jsx               # Floating bottom pill bar (Mic/Cam with device pickers, CC, Reactions, Board, Leave)
+│   ├── DeviceMenu.jsx               # Chevron dropdown to switch microphone/camera (portal + viewport-clamped, enumerateDevices + hot-swap)
 │   ├── SidePanel.jsx                # Multi-tab drawer (People with Host Admit/Deny, Chat, Breakouts, AI Notes)
-│   ├── Whiteboard.jsx               # Collaborative Milo Board with real-time sync & PNG export
+│   ├── Whiteboard.jsx               # Milo Board: nib-accurate in-board pen, smooth midpoint-quadratic strokes, sync, PNG export
 │   ├── LiveCaptions.jsx             # Real-time Web Speech recognition for Hindi, Tamil, Telugu, etc.
-│   ├── LobbyModal.jsx               # Pre-meeting green room (device test, name input, Low Data switch)
+│   ├── LobbyModal.jsx               # Pre-meeting green room (device test, live mic meter, name, Low Data)
+│   ├── SettingsModal.jsx            # Header-gear settings dialog (Audio / Video / General tabs, live test + preview)
 │   └── AISummaryModal.jsx           # Post-meeting summary dialog with markdown export
 │
-└── lib/
-    └── webrtc.js                    # WebRTC Mesh manager, STUN servers, track replacement, audio speaker detector
+├── lib/
+│   ├── webrtc.js                    # WebRTC Mesh manager, ICE candidate queue, STUN, track swap, speaker detector
+│   └── settings.js                  # Persisted preferences (localStorage `milo.settings`) + Indian language list
+│
+├── e2e-verify.mjs                   # Puppeteer 2-peer call E2E (fake media devices) — 20 checks
+├── e2e-signaling.mjs                # Raw Socket.io protocol contract test — 16 checks
+├── e2e-features.mjs                 # Settings, in-call features + mobile viewport test — 28 checks
+└── e2e-ai-notes.mjs                 # AI Notes generation + post-call summary modal — 6 checks
 ```
 
 ---
@@ -65,8 +85,17 @@ When editing or adding video/audio features, strictly observe these rules:
 
 1. **`reactStrictMode: false`:** Kept false in `next.config.mjs` to prevent React 18 from unmounting and immediately remounting WebRTC `RTCPeerConnection` instances during development.
 2. **Track Replacement over Renegotiation:** When switching from webcam to screen share, use `sender.replaceTrack(screenTrack)` instead of tearing down the peer connection. This ensures 0ms interruption for connected peers.
+2b. **Device Switching:** Microphone/camera changes go through `WebRTCManager.replaceTrack(kind, track)` → `sender.replaceTrack()` on every peer. Never recreate the peer connection for a device swap; the page rebuilds `localStream` with the new track and syncs it to the manager.
 3. **Low Data Throttling:** Never hard-kill the video track when entering Low Data mode. Use `sender.setParameters()` to cap the bitrate to 120 kbps and 15 fps so video stays fluid while saving bandwidth.
 4. **Active Speaker Detection:** Use `createAudioSpeakerDetector` in `lib/webrtc.js` which connects an `AnalyserNode` to calculate RMS volume without routing local audio to speakers (preventing audio feedback loops).
+5. **ICE Candidate Queue (never remove):** `lib/webrtc.js` buffers trickle ICE candidates that arrive before the peer's `setRemoteDescription` and flushes them after. Dropping them causes silent one-way media (verified in Phase 7 E2E). Offers arriving while we hold a local offer are handled with a rollback (glare).
+6. **Late Media Attach:** `getUserMedia` may resolve after the user clicks Join. The meeting page pushes the stream into `WebRTCManager.setLocalStream()`, which attaches tracks and renegotiates automatically.
+7. **Full Teardown:** Leaving must disconnect the socket and close all peer connections (handled by the unmount cleanup in `app/meet/[id]/page.jsx`) so the room receives `user-disconnected` immediately — no ghost tiles.
+8. **Overlay Menus Use Portals:** Any dropdown that can appear inside a card with `overflow: hidden` (device pickers, future menus) must render through `createPortal` to `document.body` with clamped fixed positioning. Do not switch `DeviceMenu` back to an inline absolute dropdown — it gets clipped (verified bug).
+9. **Preferences Go Through `lib/settings.js`:** Never read/write `localStorage` ad hoc. Use `loadSettings()` / `saveSettings()` so the settings dialog, green room, and meeting page stay in sync; new preference keys belong in `defaultSettings` too.
+10. **Whiteboard Canvas Sizing & Cursor:** Stroke coordinates are CSS pixels mapped through `ctx.setTransform(buffer/CSS ratio)`. Never size the canvas buffer once at mount — a `ResizeObserver` keeps it in sync (DPR included). The pen/eraser must stay a DOM element positioned from the same coordinates (native `cursor: none`), otherwise the nib visually detaches from the ink at DPI scaling or after layout changes.
+11. **AI Summary Transcript Contract:** Only finalized speech results are appended to `captionsLog` — interim fragments would flood the prompt and degrade summaries. `LiveCaptions` stores `onCaptionLogged` in a ref so parent re-renders never restart recognition (inline callbacks were causing transcript gaps). `/api/summary` must always return a usable `smart-local` summary when no key is configured; never fail just because `GEMINI_API_KEY` is absent.
+12. **Never Drop a Renegotiation:** If `setLocalStream`/`replaceTrack` must add senders while `signalingState !== 'stable'`, queue the peer in `pendingNegotiations` and offer on the next `stable` transition. Dropping it yields intermittent one-way video (`readyState 0`, blank remote tile) verified in E2E. Keep one remote track per kind and call `video.play()` after attaching `srcObject`.
 
 ---
 

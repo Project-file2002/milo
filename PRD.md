@@ -48,6 +48,11 @@
   - Real-time mic volume level meter.
   - Name and profile initials customizer.
   - Low Data Mode pre-activation toggle.
+- **Global Settings (header gear):**
+  - Audio tab: default microphone and speaker selection with a live microphone test meter.
+  - Video tab: default camera selection with a mirrored live preview.
+  - General tab: display name, start-in-Low-Data default, default captions language, reset to defaults.
+  - Preferences persist per browser (`localStorage`) and pre-fill the green room, meeting name, devices, Low Data mode, and captions language.
 - **Host Waiting Room & Entry Permissions:**
   - Guests requesting entry enter an approval queue.
   - Host receives toast and banner notification with `[Admit]` and `[Deny]` actions.
@@ -63,7 +68,7 @@
   - Live socket broadcasting of subtitle events across the room with speaker tag.
 - **Milo AI Meeting Notes & Action Items:**
   - Captures full speech transcript and chat log throughout the meeting.
-  - Post-call or on-demand generation using Gemini 1.5 Flash API (with smart fallback local NLP engine).
+  - Post-call or on-demand generation using the Gemini Flash API (model configurable via `GEMINI_MODEL`, default `gemini-2.5-flash`) with a smart local NLP fallback engine.
   - Outputs:
     1. Executive Overview in English and Hindi (`संक्षेप`)
     2. Key Decisions & Discussion Topics

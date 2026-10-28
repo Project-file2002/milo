@@ -41,7 +41,7 @@ This document serves as the master technical directory for any AI agent or softw
 
 | Repository / API | URL | Purpose in Milo |
 | :--- | :--- | :--- |
-| **Google Gemini API** | [https://github.com/google-gemini/generative-ai-js](https://github.com/google-gemini/generative-ai-js) | Generates executive summaries, Hindi/regional translations, and structured action items from live transcripts via `gemini-1.5-flash`. |
+| **Google Gemini API** | [https://github.com/google-gemini/generative-ai-js](https://github.com/google-gemini/generative-ai-js) | Generates executive summaries, Hindi/regional translations, and structured action items from live transcripts via Gemini Flash (`GEMINI_MODEL`, default `gemini-2.5-flash`). |
 | **Web Speech API** | [MDN Web Speech API Reference](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API) | Zero-cost, zero-latency browser native speech recognition supporting Indian languages (`hi-IN`, `ta-IN`, `te-IN`, `mr-IN`, `en-IN`). |
 | **openai/whisper** | [https://github.com/openai/whisper](https://github.com/openai/whisper) | Reference robust multilingual speech recognition model for server-side audio transcription fallback. |
 

@@ -19,6 +19,8 @@ import {
   PenTool,
   Clock
 } from 'lucide-react';
+import SettingsModal from '@/components/SettingsModal';
+import { loadSettings } from '@/lib/settings';
 
 export default function HomePage() {
   const router = useRouter();
@@ -30,6 +32,12 @@ export default function HomePage() {
   const [createdRoomLink, setCreatedRoomLink] = useState('');
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [displayName, setDisplayName] = useState('Abhishek');
+
+  useEffect(() => {
+    setDisplayName(loadSettings().displayName || 'Abhishek');
+  }, []);
 
   // Update real-time clock and date
   useEffect(() => {
@@ -185,6 +193,7 @@ export default function HomePage() {
 
           <button
             title="Settings"
+            onClick={() => setShowSettings(true)}
             style={{
               width: '40px',
               height: '40px',
@@ -215,7 +224,7 @@ export default function HomePage() {
               fontSize: '15px',
             }}
           >
-            A
+            {(displayName || 'A').charAt(0).toUpperCase()}
           </div>
         </div>
       </header>
@@ -518,6 +527,15 @@ export default function HomePage() {
           </div>
         </div>
       </main>
+
+      {/* Settings dialog */}
+      <SettingsModal
+        open={showSettings}
+        onClose={() => {
+          setShowSettings(false);
+          setDisplayName(loadSettings().displayName || 'Abhishek');
+        }}
+      />
 
       {/* Modal: Meeting link created for later */}
       {showLinkModal && (

@@ -154,6 +154,9 @@ function ParticipantTile({
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
+      // Autoplay can be deferred while the tile is hidden (avatar fallback);
+      // an explicit play() resumes it as soon as a track arrives.
+      videoRef.current.play?.().catch(() => {});
     }
   }, [stream]);
 
@@ -169,6 +172,7 @@ function ParticipantTile({
 
   return (
     <div
+      data-participant-tile={isLocal ? 'local' : user?.id}
       style={{
         position: 'relative',
         width: '100%',
@@ -373,6 +377,7 @@ function ScreenShareTile({ stream, presenterName }) {
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
+      videoRef.current.play?.().catch(() => {});
     }
   }, [stream]);
 

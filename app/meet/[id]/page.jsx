@@ -11,6 +11,7 @@ import LiveCaptions from '@/components/LiveCaptions';
 import LobbyModal from '@/components/LobbyModal';
 import AISummaryModal from '@/components/AISummaryModal';
 import { WebRTCManager, createAudioSpeakerDetector } from '@/lib/webrtc';
+import { loadSettings } from '@/lib/settings';
 import confetti from 'canvas-confetti';
 
 export default function MeetingPage() {
@@ -36,6 +37,7 @@ export default function MeetingPage() {
   const [screenPresenterName, setScreenPresenterName] = useState('');
   const [isLowDataMode, setIsLowDataMode] = useState(false);
   const [captionsEnabled, setCaptionsEnabled] = useState(false);
+  const [captionLanguage, setCaptionLanguage] = useState('hi-IN');
   const [handRaised, setHandRaised] = useState(false);
   const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
   const [pinnedPeerId, setPinnedPeerId] = useState(null);
@@ -49,6 +51,7 @@ export default function MeetingPage() {
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [breakoutRooms, setBreakoutRooms] = useState([]);
   const [captionsLog, setCaptionsLog] = useState([]);
+  const [whiteboardStrokes, setWhiteboardStrokes] = useState([]);
   const [floatingReactions, setFloatingReactions] = useState([]);
   const [activePanel, setActivePanel] = useState(null);
   const [showSummaryModal, setShowSummaryModal] = useState(false);
@@ -59,26 +62,46 @@ export default function MeetingPage() {
   const rtcManagerRef = useRef(null);
   const speakerDetectorRef = useRef(null);
 
+  // Apply saved preferences (name, low-data default, caption language) before joining
+  useEffect(() => {
+    const saved = loadSettings();
+    if (saved.displayName) setUserName(saved.displayName);
+    if (saved.lowDataDefault) setIsLowDataMode(true);
+    if (saved.captionLanguage) setCaptionLanguage(saved.captionLanguage);
+  }, []);
+
   // Initialize Local Media on mount for pre-meeting lobby
   useEffect(() => {
     let mounted = true;
+    const stopIfUnmounted = (stream) => {
+      if (!mounted) {
+        stream.getTracks().forEach((t) => t.stop());
+        return false;
+      }
+      return true;
+    };
 
     async function initMedia() {
+      const saved = loadSettings();
+      const baseVideo = { width: { ideal: 1280 }, height: { ideal: 720 } };
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: true,
+          video: saved.cameraId ? { ...baseVideo, deviceId: { exact: saved.cameraId } } : baseVideo,
+          audio: saved.microphoneId ? { deviceId: { exact: saved.microphoneId } } : true,
         });
-        if (mounted) {
-          setLocalStream(stream);
-        }
+        if (stopIfUnmounted(stream)) setLocalStream(stream);
       } catch (err) {
-        console.warn('getUserMedia failed, trying audio only or dummy stream:', err);
+        console.warn('getUserMedia failed with saved devices, falling back:', err);
         try {
-          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          if (mounted) setLocalStream(audioStream);
+          const stream = await navigator.mediaDevices.getUserMedia({ video: baseVideo, audio: true });
+          if (stopIfUnmounted(stream)) setLocalStream(stream);
         } catch (e) {
-          console.warn('Camera/Mic permission denied or not found.');
+          try {
+            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            if (stopIfUnmounted(audioStream)) setLocalStream(audioStream);
+          } catch (err2) {
+            console.warn('Camera/Mic permission denied or not found.');
+          }
         }
       }
     }
@@ -116,7 +139,13 @@ export default function MeetingPage() {
   const handleJoinMeeting = useCallback(() => {
     if (socketRef.current) return;
 
-    const socket = io(typeof window !== 'undefined' ? window.location.origin : '', {
+    // On Vercel (serverless) the Socket.io server cannot run in-process, so the
+    // signaling origin is configurable; local dev still defaults to same-origin.
+    const signalingUrl = (
+      process.env.NEXT_PUBLIC_SIGNALING_URL ||
+      (typeof window !== 'undefined' ? window.location.origin : '')
+    ).replace(/\/$/, '');
+    const socket = io(signalingUrl, {
       transports: ['websocket', 'polling'],
     });
     socketRef.current = socket;
@@ -139,6 +168,7 @@ export default function MeetingPage() {
       },
     });
     rtcManagerRef.current = rtc;
+    if (isLowDataMode) rtc.setLowDataMode(true);
 
     // Socket Event Handlers
     socket.on('connect', () => {
@@ -158,12 +188,13 @@ export default function MeetingPage() {
       setIsDenied(true);
     });
 
-    socket.on('room-joined', ({ roomId, peerId, isHost: assignedHost, participants: existingPeers, chatHistory, breakoutRooms: existingBreakouts }) => {
+    socket.on('room-joined', ({ roomId, peerId, isHost: assignedHost, participants: existingPeers, chatHistory, whiteboardStrokes: syncedStrokes, breakoutRooms: existingBreakouts }) => {
       setIsWaitingForHost(false);
       setInMeeting(true);
       setIsHost(assignedHost);
       setParticipants(existingPeers);
       if (chatHistory) setChatMessages(chatHistory);
+      if (syncedStrokes) setWhiteboardStrokes(syncedStrokes);
       if (existingBreakouts) setBreakoutRooms(existingBreakouts);
 
       // Initiate WebRTC mesh peer connection with each existing member
@@ -221,6 +252,15 @@ export default function MeetingPage() {
       setWaitingList((prev) => [...prev, guest]);
     });
 
+    // Keep an in-page stroke log so the Milo Board can be re-opened with full history
+    socket.on('whiteboard-draw', (stroke) => {
+      setWhiteboardStrokes((prev) => [...prev, stroke]);
+    });
+
+    socket.on('whiteboard-clear', () => {
+      setWhiteboardStrokes([]);
+    });
+
     socket.on('waiting-room-left', ({ peerId }) => {
       setWaitingList((prev) => prev.filter((g) => g.peerId !== peerId));
     });
@@ -246,7 +286,60 @@ export default function MeetingPage() {
     socket.on('breakout-rooms-closed', () => {
       setBreakoutRooms([]);
     });
-  }, [roomId, userName, isHostIntent, localStream, activePanel]);
+  }, [roomId, userName, isHostIntent, localStream, activePanel, isLowDataMode]);
+
+  // Full teardown when the meeting page unmounts (leaving via router or tab close)
+  useEffect(() => {
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      if (rtcManagerRef.current) {
+        rtcManagerRef.current.closeAll();
+        rtcManagerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Keep the RTC manager's outbound tracks in sync with the media stream (which may arrive after join)
+  useEffect(() => {
+    if (rtcManagerRef.current && localStream) {
+      rtcManagerRef.current.setLocalStream(localStream);
+    }
+  }, [localStream, inMeeting]);
+
+  // Switch to a different microphone or camera picked from DeviceMenu
+  const switchDevice = useCallback(
+    async (kind, deviceId) => {
+      if (!deviceId) return;
+      try {
+        const constraints =
+          kind === 'audio'
+            ? { audio: { deviceId: { exact: deviceId } } }
+            : { video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } } };
+        const incoming = await navigator.mediaDevices.getUserMedia(constraints);
+        const newTrack = (kind === 'audio' ? incoming.getAudioTracks() : incoming.getVideoTracks())[0];
+        if (!newTrack) return;
+
+        const next = new MediaStream();
+        (localStream ? localStream.getTracks() : []).forEach((t) => {
+          if (t.kind === kind) t.stop();
+          else next.addTrack(t);
+        });
+        next.addTrack(newTrack);
+
+        setLocalStream(next);
+        if (kind === 'audio') setAudioEnabled(newTrack.enabled);
+        else setVideoEnabled(newTrack.enabled);
+
+        if (rtcManagerRef.current) rtcManagerRef.current.replaceTrack(kind, newTrack);
+      } catch (err) {
+        console.warn(`Could not switch ${kind} device:`, err);
+      }
+    },
+    [localStream]
+  );
 
   // Toggle Audio
   const toggleAudio = () => {
@@ -441,6 +534,7 @@ export default function MeetingPage() {
         onToggleLowData={toggleLowDataMode}
         onJoin={handleJoinMeeting}
         onBackToHome={() => router.push('/')}
+        onSwitchDevice={switchDevice}
       />
     );
   }
@@ -486,6 +580,7 @@ export default function MeetingPage() {
             <Whiteboard
               roomId={roomId}
               socket={socketRef.current}
+              initialStrokes={whiteboardStrokes}
               onClose={() => setIsWhiteboardOpen(false)}
             />
           )}
@@ -496,6 +591,7 @@ export default function MeetingPage() {
             socket={socketRef.current}
             localUserName={userName}
             enabled={captionsEnabled}
+            defaultLanguage={captionLanguage}
             onCaptionLogged={(caption) => setCaptionsLog((prev) => [...prev, caption])}
           />
         </div>
@@ -522,6 +618,7 @@ export default function MeetingPage() {
       {/* Bottom Floating Google Meet Control Bar */}
       <ControlBar
         roomId={roomId}
+        localStream={localStream}
         audioEnabled={audioEnabled}
         videoEnabled={videoEnabled}
         captionsEnabled={captionsEnabled}
@@ -546,6 +643,7 @@ export default function MeetingPage() {
         }}
         onSendReaction={handleSendReaction}
         onLeaveMeeting={handleLeaveMeeting}
+        onSwitchDevice={switchDevice}
       />
 
       {/* Post-Meeting AI Summary Modal */}
@@ -553,7 +651,10 @@ export default function MeetingPage() {
         <AISummaryModal
           summary={generatedSummary}
           roomId={roomId}
-          onClose={() => setShowSummaryModal(false)}
+          onClose={() => {
+            setShowSummaryModal(false);
+            router.push('/');
+          }}
           onBackHome={() => router.push('/')}
         />
       )}

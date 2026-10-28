@@ -1,29 +1,25 @@
 'use strict';
 import React, { useState, useEffect, useRef } from 'react';
 import { Globe } from 'lucide-react';
+import { INDIAN_LANGUAGES } from '@/lib/settings';
 
 export default function LiveCaptions({
   roomId = '',
   socket = null,
   localUserName = 'You',
   enabled = false,
+  defaultLanguage = 'hi-IN',
   onCaptionLogged = () => {},
 }) {
   const [currentCaption, setCurrentCaption] = useState(null);
-  const [selectedLanguage, setSelectedLanguage] = useState('hi-IN');
+  const [selectedLanguage, setSelectedLanguage] = useState(defaultLanguage);
   const recognitionRef = useRef(null);
+  // Keep the logger in a ref so parent re-renders never restart recognition.
+  const onCaptionLoggedRef = useRef(onCaptionLogged);
+  useEffect(() => {
+    onCaptionLoggedRef.current = onCaptionLogged;
+  }, [onCaptionLogged]);
 
-  const indianLanguages = [
-    { code: 'hi-IN', label: 'हिन्दी (Hindi)' },
-    { code: 'en-IN', label: 'English (India)' },
-    { code: 'mr-IN', label: 'मराठी (Marathi)' },
-    { code: 'ta-IN', label: 'தமிழ் (Tamil)' },
-    { code: 'te-IN', label: 'తెలుగు (Telugu)' },
-    { code: 'bn-IN', label: 'বাংলা (Bengali)' },
-    { code: 'gu-IN', label: 'ગુજરાતી (Gujarati)' },
-    { code: 'kn-IN', label: 'ಕನ್ನಡ (Kannada)' },
-    { code: 'ml-IN', label: 'മലയാളം (Malayalam)' },
-  ];
 
   // Socket listener for remote captions from other participants
   useEffect(() => {
@@ -31,13 +27,13 @@ export default function LiveCaptions({
 
     socket.on('new-caption', (caption) => {
       setCurrentCaption(caption);
-      onCaptionLogged(caption);
+      onCaptionLoggedRef.current(caption);
     });
 
     return () => {
       socket.off('new-caption');
     };
-  }, [socket, onCaptionLogged]);
+  }, [socket]);
 
   // Speech Recognition management
   useEffect(() => {
@@ -84,15 +80,19 @@ export default function LiveCaptions({
         };
 
         setCurrentCaption(captionData);
-        onCaptionLogged(captionData);
 
-        if (socket && finalTranscript) {
-          socket.emit('send-caption', {
-            roomId,
-            text: finalTranscript.trim(),
-            lang: selectedLanguage,
-            senderName: localUserName,
-          });
+        // Only finalized phrases belong in the transcript that feeds AI Notes;
+        // interim results would flood it with partial fragments.
+        if (finalTranscript) {
+          onCaptionLoggedRef.current(captionData);
+          if (socket) {
+            socket.emit('send-caption', {
+              roomId,
+              text: finalTranscript.trim(),
+              lang: selectedLanguage,
+              senderName: localUserName,
+            });
+          }
         }
       }
     };
@@ -124,7 +124,7 @@ export default function LiveCaptions({
         recognition.stop();
       } catch (e) {}
     };
-  }, [enabled, selectedLanguage, roomId, socket, localUserName, onCaptionLogged]);
+  }, [enabled, selectedLanguage, roomId, socket, localUserName]);
 
   if (!enabled && !currentCaption) return null;
 
@@ -176,7 +176,7 @@ export default function LiveCaptions({
               cursor: 'pointer',
             }}
           >
-            {indianLanguages.map((lang) => (
+            {INDIAN_LANGUAGES.map((lang) => (
               <option key={lang.code} value={lang.code} style={{ backgroundColor: '#202124', color: '#e8eaed' }}>
                 {lang.label}
               </option>

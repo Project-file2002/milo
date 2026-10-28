@@ -14,18 +14,10 @@ export async function POST(req) {
     const geminiKey = apiKey || process.env.GEMINI_API_KEY;
 
     if (geminiKey && transcriptText.trim().length > 10) {
-      try {
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [
-                {
-                  parts: [
-                    {
-                      text: `You are Milo AI, an intelligent meeting assistant for Indian professional teams.
+      // Model names are retired over time; allow GEMINI_MODEL and try current
+      // Flash models before falling back to the local engine.
+      const models = [...new Set([process.env.GEMINI_MODEL, 'gemini-2.5-flash', 'gemini-2.0-flash'].filter(Boolean))];
+      const prompt = `You are Milo AI, an intelligent meeting assistant for Indian professional teams.
 Analyze the following meeting transcript and produce a structured, clean meeting summary with:
 1. Executive Summary (Brief 2-3 sentences overview in English and a 1-sentence Hindi translation)
 2. Key Discussion Topics & Decisions Made
@@ -36,28 +28,38 @@ Meeting Title: ${meetingTitle || 'Milo Video Conference'}
 Attendees: ${participants.map((p) => p.userName).join(', ') || 'Team'}
 
 Transcript:
-${transcriptText}`,
-                    },
-                  ],
-                },
-              ],
-            }),
-          }
-        );
+${transcriptText}`;
 
-        if (response.ok) {
-          const data = await response.json();
-          const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (generatedText) {
-            return NextResponse.json({
-              success: true,
-              mode: 'gemini',
-              summary: generatedText,
-            });
+      for (const model of models) {
+        try {
+          const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+              }),
+            }
+          );
+
+          if (response.ok) {
+            const data = await response.json();
+            const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (generatedText) {
+              return NextResponse.json({
+                success: true,
+                mode: 'gemini',
+                model,
+                summary: generatedText,
+              });
+            }
+          } else {
+            console.warn(`Gemini ${model} responded ${response.status}; trying next option.`);
           }
+        } catch (geminiErr) {
+          console.warn(`Gemini ${model} call failed:`, geminiErr);
         }
-      } catch (geminiErr) {
-        console.warn('Gemini API call failed, falling back to local NLP synthesis:', geminiErr);
       }
     }
 

@@ -1,6 +1,7 @@
 'use strict';
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Mic, MicOff, Video, VideoOff, WifiOff, ShieldCheck, Sparkles, Loader2 } from 'lucide-react';
+import DeviceMenu from './DeviceMenu';
 
 export default function LobbyModal({
   roomId = '',
@@ -17,14 +18,53 @@ export default function LobbyModal({
   onToggleLowData = () => {},
   onJoin = () => {},
   onBackToHome = () => {},
+  onSwitchDevice = () => {},
 }) {
   const videoRef = useRef(null);
+  const [micLevel, setMicLevel] = useState(0);
 
   useEffect(() => {
     if (videoRef.current && localStream) {
       videoRef.current.srcObject = localStream;
     }
   }, [localStream]);
+
+  // Live mic volume meter (AnalyserNode RMS, no audio routed to speakers)
+  useEffect(() => {
+    const audioTrack = localStream && localStream.getAudioTracks()[0];
+    if (!audioTrack || !audioEnabled) {
+      setMicLevel(0);
+      return;
+    }
+    let raf = null;
+    let audioContext = null;
+    try {
+      const stream = new MediaStream([audioTrack]);
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 512;
+      audioContext.createMediaStreamSource(stream).connect(analyser);
+      const buf = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        analyser.getByteTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const v = (buf[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / buf.length);
+        setMicLevel(Math.min(1, rms * 4));
+        raf = requestAnimationFrame(tick);
+      };
+      tick();
+    } catch (e) {
+      // AudioContext unavailable; meter stays idle
+    }
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      if (audioContext) audioContext.close().catch(() => {});
+    };
+  }, [localStream, audioEnabled]);
 
   return (
     <div
@@ -108,47 +148,104 @@ export default function LobbyModal({
                 position: 'absolute',
                 bottom: '16px',
                 display: 'flex',
-                gap: '16px',
+                gap: '12px',
                 zIndex: 10,
               }}
             >
-              <button
-                onClick={onToggleAudio}
-                title={audioEnabled ? 'Turn off microphone' : 'Turn on microphone'}
+              <div
                 style={{
-                  width: '52px',
-                  height: '52px',
-                  borderRadius: '50%',
-                  backgroundColor: audioEnabled ? 'rgba(60, 64, 67, 0.9)' : '#ea4335',
-                  backdropFilter: 'blur(8px)',
-                  color: '#fff',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
+                  height: '52px',
+                  borderRadius: '26px',
+                  backgroundColor: 'rgba(60, 64, 67, 0.9)',
+                  backdropFilter: 'blur(8px)',
                   boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
                 }}
               >
-                {audioEnabled ? <Mic size={22} /> : <MicOff size={22} />}
-              </button>
+                <button
+                  onClick={onToggleAudio}
+                  title={audioEnabled ? 'Turn off microphone' : 'Turn on microphone'}
+                  style={{
+                    width: '52px',
+                    height: '52px',
+                    borderRadius: '26px 0 0 26px',
+                    backgroundColor: audioEnabled ? 'transparent' : '#ea4335',
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {audioEnabled ? <Mic size={22} /> : <MicOff size={22} />}
+                </button>
 
-              <button
-                onClick={onToggleVideo}
-                title={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
+                {/* Live mic volume meter */}
+                <div
+                  data-mic-meter
+                  style={{
+                    width: '56px',
+                    height: '52px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0 8px',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '40px',
+                      height: '6px',
+                      borderRadius: '3px',
+                      backgroundColor: 'rgba(255,255,255,0.15)',
+                      overflow: 'hidden',
+                      display: 'flex',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${Math.round(micLevel * 100)}%`,
+                        height: '100%',
+                        borderRadius: '3px',
+                        backgroundColor: micLevel > 0.66 ? '#fbbc04' : '#34a853',
+                        transition: 'width 90ms linear',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <DeviceMenu kind="audio" localStream={localStream} onSelect={(id) => onSwitchDevice('audio', id)} />
+              </div>
+
+              <div
                 style={{
-                  width: '52px',
-                  height: '52px',
-                  borderRadius: '50%',
-                  backgroundColor: videoEnabled ? 'rgba(60, 64, 67, 0.9)' : '#ea4335',
-                  backdropFilter: 'blur(8px)',
-                  color: '#fff',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
+                  height: '52px',
+                  borderRadius: '26px',
+                  backgroundColor: 'rgba(60, 64, 67, 0.9)',
+                  backdropFilter: 'blur(8px)',
                   boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
                 }}
               >
-                {videoEnabled ? <Video size={22} /> : <VideoOff size={22} />}
-              </button>
+                <button
+                  onClick={onToggleVideo}
+                  title={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
+                  style={{
+                    width: '52px',
+                    height: '52px',
+                    borderRadius: '26px 0 0 26px',
+                    backgroundColor: videoEnabled ? 'transparent' : '#ea4335',
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {videoEnabled ? <Video size={22} /> : <VideoOff size={22} />}
+                </button>
+                <DeviceMenu kind="video" localStream={localStream} onSelect={(id) => onSwitchDevice('video', id)} />
+              </div>
             </div>
           </div>
         </div>

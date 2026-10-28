@@ -1,5 +1,6 @@
 'use strict';
 import React, { useState, useEffect } from 'react';
+import DeviceMenu from './DeviceMenu';
 import {
   Mic,
   MicOff,
@@ -26,6 +27,7 @@ import {
 
 export default function ControlBar({
   roomId = '',
+  localStream = null,
   audioEnabled = true,
   videoEnabled = true,
   captionsEnabled = false,
@@ -47,6 +49,7 @@ export default function ControlBar({
   onTogglePanel = () => {},
   onSendReaction = () => {},
   onLeaveMeeting = () => {},
+  onSwitchDevice = () => {},
 }) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -101,43 +104,67 @@ export default function ControlBar({
 
       {/* Center: Main Floating Control Bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', position: 'relative' }}>
-        {/* Mic Button */}
-        <button
-          onClick={onToggleAudio}
-          title={audioEnabled ? 'Turn off microphone' : 'Turn on microphone'}
+        {/* Mic Button + Device Picker */}
+        <div
           style={{
-            width: '48px',
-            height: '48px',
-            borderRadius: '50%',
-            backgroundColor: audioEnabled ? '#3c4043' : '#ea4335',
-            color: '#fff',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'background 0.2s',
+            height: '48px',
+            borderRadius: '24px',
+            backgroundColor: '#3c4043',
+            overflow: 'visible',
           }}
         >
-          {audioEnabled ? <Mic size={20} /> : <MicOff size={20} />}
-        </button>
+          <button
+            onClick={onToggleAudio}
+            title={audioEnabled ? 'Turn off microphone' : 'Turn on microphone'}
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '24px 0 0 24px',
+              backgroundColor: audioEnabled ? 'transparent' : '#ea4335',
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background 0.2s',
+            }}
+          >
+            {audioEnabled ? <Mic size={20} /> : <MicOff size={20} />}
+          </button>
+          <DeviceMenu kind="audio" localStream={localStream} onSelect={(id) => onSwitchDevice('audio', id)} />
+        </div>
 
-        {/* Video Button */}
-        <button
-          onClick={onToggleVideo}
-          title={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
+        {/* Video Button + Device Picker */}
+        <div
           style={{
-            width: '48px',
-            height: '48px',
-            borderRadius: '50%',
-            backgroundColor: videoEnabled ? '#3c4043' : '#ea4335',
-            color: '#fff',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'background 0.2s',
+            height: '48px',
+            borderRadius: '24px',
+            backgroundColor: '#3c4043',
+            overflow: 'visible',
           }}
         >
-          {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
-        </button>
+          <button
+            onClick={onToggleVideo}
+            title={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '24px 0 0 24px',
+              backgroundColor: videoEnabled ? 'transparent' : '#ea4335',
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background 0.2s',
+            }}
+          >
+            {videoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
+          </button>
+          <DeviceMenu kind="video" localStream={localStream} onSelect={(id) => onSwitchDevice('video', id)} />
+        </div>
 
         {/* Captions Button */}
         <button
