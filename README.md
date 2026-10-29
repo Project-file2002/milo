@@ -52,6 +52,8 @@ Copy `.env.example` to `.env.local`.
 3. Import this repository into Vercel and add both values as environment variables (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`).
 4. Deploy. Vercel builds with `next build`; `server.js` is not used, and signaling runs through Supabase.
 
+This repository is verified live on that path at `https://milo-mu-ten.vercel.app`: two-peer call, waiting room, chat, reactions, board sync, and AI summary all pass from a real browser against the deployment (`BASE_URL=https://milo-mu-ten.vercel.app node e2e-verify.mjs`).
+
 Free-tier limits that matter: 200 concurrent Realtime connections, 2,000,000 messages/month, 100 messages/second, 256 KB per message, 100 channels per connection. Milo uses two channels per participant (lobby + room) and batches whiteboard strokes, so a small team (roughly 20-40 people in calls at once) fits comfortably.
 
 Channels are public and named after the room code (`milo-room-<code>`). Anyone with the project anon key who knows the code could subscribe, so treat room links as the secret; for sensitive deployments add Supabase Auth and private channels.

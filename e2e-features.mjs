@@ -1,7 +1,8 @@
 import puppeteer from 'puppeteer-core';
+import { fakeMediaArgs } from './e2e-media.mjs';
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const BASE = 'http://localhost:3000';
+const BASE = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const results = [];
 const log = (name, ok, extra = '') => {
   results.push({ name, ok });
@@ -13,7 +14,7 @@ async function openBrowser(tag, viewport = null) {
   const browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: 'new',
-    args: ['--no-sandbox', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
+    args: ['--no-sandbox', ...fakeMediaArgs()],
   });
   const page = await browser.newPage();
   if (viewport) await page.setViewport(viewport);
@@ -36,6 +37,20 @@ async function clickEl(page, matcherText) {
     if (el) { el.click(); return true; }
     return false;
   }, matcherText);
+}
+
+// Live deployments render the lobby markup before hydration; retry the click
+// until the pre-join screen is actually gone.
+async function joinNow(page) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await clickEl(page, 'Join now');
+    for (let i = 0; i < 8; i++) {
+      const leftLobby = await page.evaluate(() => !document.body.innerText.includes('Ready to join?'));
+      if (leftLobby) return true;
+      await sleep(250);
+    }
+  }
+  return false;
 }
 
 async function joinAsHost(page) {
@@ -175,7 +190,7 @@ try {
   const menuClosedByEsc = await page.evaluate(() => !document.querySelector('[data-device-menu="audio"]'));
   log('Device dropdown closes on Escape', menuClosedByEsc);
 
-  await clickEl(page, 'Join now');
+  await joinNow(page);
   await waitForText(page, 'HOST');
 
   // Low Data mode via More options
@@ -407,7 +422,7 @@ try {
   log('Mobile lobby (390px) fits without extreme overflow', lobbyOk);
   await mob.page.screenshot({ path: 'e2e-mobile-lobby.png' });
 
-  await clickEl(mob.page, 'Join now');
+  await joinNow(mob.page);
   await waitForText(mob.page, 'HOST');
   const gridOk = await mob.page.evaluate(() => {
     const tile = document.querySelector('[data-participant-tile]');

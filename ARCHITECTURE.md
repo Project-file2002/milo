@@ -112,6 +112,8 @@ Trickle ICE candidates may reach a peer **before** the associated SDP offer/answ
 
 The Supabase transport keeps no database tables: it needs only Broadcast + Presence, which are included in the free tier. Public channels carry the room code; anyone holding the project anon key and the room code could subscribe. That trust model is documented in the README, and private channels / Supabase Auth are the upgrade path for sensitive deployments.
 
+This path is verified in production: the Vercel deployment (`https://milo-mu-ten.vercel.app`) runs with `NEXT_PUBLIC_SUPABASE_URL` + anon key, the browser suites pass against that URL, and the hosted project passes the 21-check transport contract.
+
 ---
 
 ## 3. Host Waiting Room State Machine

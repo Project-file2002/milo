@@ -1,7 +1,8 @@
 import puppeteer from 'puppeteer-core';
+import { fakeMediaArgs } from './e2e-media.mjs';
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const BASE = 'http://localhost:3000';
+const BASE = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const results = [];
 const log = (name, ok, extra = '') => {
   results.push(ok);
@@ -12,7 +13,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: 'new',
-  args: ['--no-sandbox', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
+  args: ['--no-sandbox', ...fakeMediaArgs()],
 });
 const page = await browser.newPage();
 page.on('pageerror', (e) => console.log('[pageerror]', String(e).slice(0, 200)));
@@ -32,6 +33,18 @@ const clickText = (text) =>
 const hasText = (text, timeout = 15000) =>
   page.waitForFunction((t) => document.body && document.body.innerText.includes(t), { timeout }, text)
     .then(() => true).catch(() => false);
+// Live deployments render the lobby before hydration; retry until the click sticks.
+const joinNow = async () => {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await clickText('Join now');
+    for (let i = 0; i < 8; i++) {
+      const leftLobby = await page.evaluate(() => !document.body.innerText.includes('Ready to join?'));
+      if (leftLobby) return true;
+      await sleep(250);
+    }
+  }
+  return false;
+};
 
 try {
   await page.goto(BASE, { waitUntil: 'networkidle2' });
@@ -39,7 +52,7 @@ try {
   await sleep(300);
   await clickText('Start an instant meeting');
   await hasText('Ready to join?');
-  await clickText('Join now');
+  await joinNow();
   log('Host joins meeting', await hasText('HOST'));
 
   await clickTitle('Milo AI Notes & Summary');

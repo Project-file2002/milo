@@ -168,6 +168,7 @@ export default function MeetingPage() {
       },
     });
     rtcManagerRef.current = rtc;
+    if (typeof window !== 'undefined') window.__MILO_RTC__ = rtc;
     if (isLowDataMode) rtc.setLowDataMode(true);
 
     // Socket Event Handlers

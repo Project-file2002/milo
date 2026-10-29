@@ -1,7 +1,8 @@
 import puppeteer from 'puppeteer-core';
+import { fakeMediaArgs } from './e2e-media.mjs';
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const BASE = 'http://localhost:3000';
+const BASE = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const results = [];
 const log = (name, ok, extra = '') => {
   results.push({ name, ok });
@@ -15,9 +16,7 @@ async function openBrowser(tag) {
     headless: 'new',
     args: [
       '--no-sandbox',
-      '--use-fake-ui-for-media-stream',
-      '--use-fake-device-for-media-stream',
-      '--autoplay-policy=no-user-gesture-required',
+      ...fakeMediaArgs(),
     ],
   });
   const page = await browser.newPage();
@@ -53,6 +52,21 @@ async function clickByText(page, text) {
   return handled;
 }
 
+// On a cold live deployment the lobby markup is visible before React hydrates,
+// so a single click can land on a button with no handler yet. Retry until the
+// lobby actually leaves the pre-join screen.
+async function joinNow(page) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await clickByText(page, 'Join now');
+    for (let i = 0; i < 8; i++) {
+      const leftLobby = await page.evaluate(() => !document.body.innerText.includes('Ready to join?'));
+      if (leftLobby) return true;
+      await sleep(250);
+    }
+  }
+  return false;
+}
+
 const host = await openBrowser('host');
 const guest = await openBrowser('guest');
 
@@ -77,7 +91,7 @@ try {
     setter.call(el, 'Host Abhishek');
     el.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  await clickByText(host.page, 'Join now');
+  await joinNow(host.page);
   const hostIn = await waitForText(host.page, 'HOST');
   log('Host admitted directly into call', hostIn);
   const backend = await host.page.evaluate(() => window.__MILO_SIGNALING__ || 'unknown');
@@ -92,7 +106,7 @@ try {
     setter.call(el, 'Priya');
     el.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  await clickByText(guest.page, 'Join now');
+  await joinNow(guest.page);
   const waiting = await waitForText(guest.page, 'Waiting');
   log('Guest held in waiting-room lobby', waiting);
 

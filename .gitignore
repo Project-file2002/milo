@@ -4,3 +4,8 @@ e2e-*.png
 .env*.local
 
 supabase/.temp
+
+.vercel
+.env.local
+.env.keys
+.e2e

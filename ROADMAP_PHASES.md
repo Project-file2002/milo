@@ -135,7 +135,7 @@ This document tracks the phased implementation of the **Milo** video conferencin
 - `e2e-features.mjs` — 28 checks: settings dialog (gear, camera preview, mic test meter, persistence, reset, close), lobby mic level meter, device dropdown clipping + Escape close, Low Data badge on/off, hand-raised tile indicator, captions bar with all Indian language options, breakout creation UI, reaction tray, mic + camera device pickers, pen/eraser custom cursors, nib-to-ink accuracy, smooth-stroke rendering, mobile 390px viewport (lobby, tile fit, control bar).
 - `e2e-ai-notes.mjs` — 6 checks: AI Notes panel opens, on-demand summary generation (no API key required), action-items section, post-call summary modal on Leave, and closing the modal exits home instead of re-entering the call.
 - `e2e-supabase.mjs` — 21 checks: runs the real Supabase Realtime transport against a local/hosted project — lobby admission, relayed offer, chat, whiteboard batching, hand raise, reactions, media state, breakouts, captions, late-joiner lobby + chat + stroke snapshots, denial, and host handoff on disconnect.
-- Final run: **71/71 Socket.io checks** (21 + 16 + 28 + 6), **21/21 Supabase protocol checks**, and **55/55 browser checks in Supabase mode** (verify + features + AI notes); `npm run build` compiles clean.
+- Final run: **71/71 Socket.io checks** (21 + 16 + 28 + 6), **21/21 Supabase protocol checks**, **55/55 browser checks in Supabase mode** (verify + features + AI notes), and **55/55 browser checks against the live Vercel + Supabase deployment** (`https://milo-mu-ten.vercel.app`); `npm run build` compiles clean.
 
 ### Phase 8: Vercel + Supabase Serverless Deployment
 - [x] `lib/signaling.js` transport factory: Supabase Realtime when `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` exist, Socket.io otherwise.
@@ -146,6 +146,11 @@ This document tracks the phased implementation of the **Milo** video conferencin
 - [x] Denied guests untrack presence so the host's waiting list clears immediately.
 - [x] Supabase transport allows an injected client so independent participants (tests) do not share a channel registry.
 - [x] Verified end-to-end: protocol suite 21/21 against local Supabase; browser 2-peer call 21/21, features 28/28, AI notes 6/6 with `__MILO_SIGNALING__ === 'supabase'`; Socket.io fallback 71/71 afterwards.
+- [x] Production deployment via Vercel CLI (team `tstgmlfr-3410`, project `milo`), with `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` set for production, preview, and development. Live at `https://milo-mu-ten.vercel.app`.
+- [x] Hosted Supabase project verified against the public anon key: `e2e-supabase.mjs` 21/21. (The Supabase CLI account cannot manage that project ref, so hosted checks run through the key rather than `supabase` project commands.)
+- [x] Live browser run against the deployed URL: 21/21 verify, 28/28 features, 6/6 AI notes, with `__MILO_SIGNALING__ === 'supabase'`.
+- [x] Test harness hardened for remote deployments: `BASE_URL` support in the three browser suites, Join clicks retried until hydration lands, and a looping y4m fake camera (`e2e-media.mjs`) because Chrome's built-in fake video device ends its track after ~30 s and caused random one-way video failures.
+- [x] Confirmed no failed network requests on the live app after removing the stale `/favicon.ico` metadata override (`app/icon.svg` is served automatically).
 
 **Deployment limits (free tier):** 200 concurrent Realtime connections, 2M messages/month, 100 msg/s, 256 KB/message. Public channels are keyed by room code; add Supabase Auth + private channels for sensitive rooms.
 
@@ -155,7 +160,7 @@ This document tracks the phased implementation of the **Milo** video conferencin
 - [x] **Late media stream never sent:** If `getUserMedia` resolved after "Join now", the peer connection kept zero senders. `WebRTCManager.setLocalStream()` now attaches tracks and auto-renegotiates; the meeting page syncs the stream into the manager.
 - [x] **Ghost participants after leave:** Socket/RTC teardown was missing on unmount; leaving via the summary modal no longer notified the room. Added full disconnect/closeAll cleanup.
 - [x] **Milo Board lost history:** Server-sent `whiteboardStrokes` on `room-joined` were discarded, so late joiners and re-opened boards rendered blank. Strokes are now kept in page state, replayed on open, and cleared on `whiteboard-clear`.
-- [x] **Missing favicon:** Added `app/icon.svg` (removes the only 404).
+- [x] **Missing favicon:** Added `app/icon.svg`, and removed the `metadata.icons` override that still pointed at a non-existent `/favicon.ico` (the only 404 on the live app).
 - [x] **Lobby mic level meter (PRD §4.1):** Was specced but unimplemented; added a live AnalyserNode RMS volume meter beside the mic toggle in `LobbyModal.jsx`.
 - [x] Added `data-participant-tile` attribute to video tiles for stable test selectors.
 

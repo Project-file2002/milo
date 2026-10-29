@@ -17,16 +17,21 @@ npm run dev
 npm run build
 npm start
 
-# 4. Automated E2E verification (server must be running; uses local Chrome with fake media devices)
+# 4. Automated E2E verification (uses local Chrome; fake camera/mic auto-configured)
 node e2e-verify.mjs      # 21 checks: 2-peer WebRTC call, lobby, admit, chat, whiteboard sync, AI summary, backend
 node e2e-signaling.mjs   # 16 checks: full Socket.io signaling protocol contract
 node e2e-features.mjs    # 28 checks: settings, device pickers, dropdown geometry, whiteboard nib accuracy, mobile viewport
 node e2e-ai-notes.mjs    # 6 checks: AI Notes panel, on-demand summary, post-call modal, exit-to-home
 
+# Same suites against any deployment (no local server needed):
+BASE_URL=https://milo-mu-ten.vercel.app node e2e-verify.mjs
+
 # Supabase transport (local stack via Docker, or hosted project env vars)
 npx supabase start        # local Realtime + Postgres on http://127.0.0.1:54321
 node e2e-supabase.mjs     # 21 checks: lobby, relay, snapshots, host handoff
 ```
+
+`e2e-media.mjs` supplies shared Puppeteer flags and generates a looping y4m camera in `.e2e/` (git-ignored). Chrome's built-in fake video device ends its track after roughly 30 seconds, which produces random one-way video failures; the looping file keeps both directions live for long suites. `window.__MILO_SIGNALING__` reports the active transport and `window.__MILO_RTC__` exposes the WebRTC manager for debugging.
 
 **Optional Gemini summaries:** copy `.env.example` to `.env.local` and set `GEMINI_API_KEY=AIza...` (or paste a key into the AI Notes tab at runtime). Model defaults to `gemini-2.5-flash`; override with `GEMINI_MODEL`. Without a key the route returns a complete `smart-local` summary — AI Notes is fully usable with no setup. `.env*.local` is git-ignored.
 
@@ -83,6 +88,7 @@ e:\Projects\milo\
 ├── e2e-signaling.mjs                # Raw Socket.io protocol contract test — 16 checks
 ├── e2e-features.mjs                 # Settings, in-call features + mobile viewport test — 28 checks
 ├── e2e-ai-notes.mjs                 # AI Notes generation + post-call summary modal — 6 checks
+├── e2e-media.mjs                    # Shared fake-media flags + looping y4m camera generator
 └── e2e-supabase.mjs                 # Supabase Realtime transport contract test — 21 checks
 ```
 
