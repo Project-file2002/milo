@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { io } from 'socket.io-client';
+import { createSignaling } from '@/lib/signaling';
 import VideoGrid from '@/components/VideoGrid';
 import ControlBar from '@/components/ControlBar';
 import SidePanel from '@/components/SidePanel';
@@ -139,16 +139,16 @@ export default function MeetingPage() {
   const handleJoinMeeting = useCallback(() => {
     if (socketRef.current) return;
 
-    // On Vercel (serverless) the Socket.io server cannot run in-process, so the
-    // signaling origin is configurable; local dev still defaults to same-origin.
-    const signalingUrl = (
-      process.env.NEXT_PUBLIC_SIGNALING_URL ||
-      (typeof window !== 'undefined' ? window.location.origin : '')
-    ).replace(/\/$/, '');
-    const socket = io(signalingUrl, {
-      transports: ['websocket', 'polling'],
+    // Supabase Realtime on serverless hosting (Vercel); Socket.io otherwise.
+    const socket = createSignaling({
+      roomId,
+      userName: userName.trim() || 'Participant',
+      isHostIntent,
     });
     socketRef.current = socket;
+    if (typeof window !== 'undefined') {
+      window.__MILO_SIGNALING__ = socket.transportName || 'socketio';
+    }
 
     // Initialize WebRTC Manager
     const rtc = new WebRTCManager({

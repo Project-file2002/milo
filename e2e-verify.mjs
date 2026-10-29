@@ -80,6 +80,8 @@ try {
   await clickByText(host.page, 'Join now');
   const hostIn = await waitForText(host.page, 'HOST');
   log('Host admitted directly into call', hostIn);
+  const backend = await host.page.evaluate(() => window.__MILO_SIGNALING__ || 'unknown');
+  log('Meeting uses a known signaling backend', ['supabase', 'socketio'].includes(backend), backend);
 
   // 2. Guest joins same room -> waiting room
   await guest.page.goto(`${BASE}/meet/${roomCode}`, { waitUntil: 'networkidle2' });

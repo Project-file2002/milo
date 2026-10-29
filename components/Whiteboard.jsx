@@ -114,23 +114,26 @@ export default function Whiteboard({
     const resizeObserver = new ResizeObserver(() => replay());
     if (canvas.parentElement) resizeObserver.observe(canvas.parentElement);
 
-    if (socket) {
-      socket.on('whiteboard-draw', (stroke) => {
-        drawStrokeOnCanvas(ctx, stroke);
-      });
+    const handleRemoteStroke = (stroke) => drawStrokeOnCanvas(ctx, stroke);
+    const handleRemoteClear = () => {
+      localStrokesRef.current = [];
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      remoteStrokesRef.current.clear();
+    };
 
-      socket.on('whiteboard-clear', () => {
-        localStrokesRef.current = [];
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        remoteStrokesRef.current.clear();
-      });
+    if (socket) {
+      socket.on('whiteboard-draw', handleRemoteStroke);
+
+      socket.on('whiteboard-clear', handleRemoteClear);
     }
 
     return () => {
       resizeObserver.disconnect();
       if (socket) {
-        socket.off('whiteboard-draw');
-        socket.off('whiteboard-clear');
+        // Remove only our own handlers: the meeting page also listens on the
+        // same socket for board history and must keep receiving strokes.
+        socket.off('whiteboard-draw', handleRemoteStroke);
+        socket.off('whiteboard-clear', handleRemoteClear);
       }
     };
   }, [socket, initialStrokes]);

@@ -2,3 +2,5 @@ node_modules
 .next
 e2e-*.png
 .env*.local
+
+supabase/.temp

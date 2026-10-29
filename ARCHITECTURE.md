@@ -18,16 +18,23 @@ graph TD
         RoomState["In-Memory Room State Store"]
         SummaryAPI["/api/summary (Gemini API & NLP Engine)"]
     end
-    
+
+    subgraph "Serverless Signaling (optional)"
+        SupaRT["Supabase Realtime: Broadcast + Presence (lobby + room channels)"]
+    end
+
     subgraph "External Cloud / Web Services"
         STUN["Google STUN Servers (stun.l.google.com:19302)"]
         GeminiCloud["Google Gemini Flash API"]
     end
 
-    %% Signaling Connections
-    ClientA <-->|WebSocket Signaling| SocketServer
-    ClientB <-->|WebSocket Signaling| SocketServer
-    ClientC <-->|WebSocket Signaling| SocketServer
+    %% Signaling Connections (one backend per deployment)
+    ClientA <-->|"WebSocket Signaling"| SocketServer
+    ClientB <-->|"WebSocket Signaling"| SocketServer
+    ClientC <-->|"WebSocket Signaling"| SocketServer
+    ClientA <-.->|"Realtime when Supabase env is set"| SupaRT
+    ClientB <-.->|"Realtime when Supabase env is set"| SupaRT
+    ClientC <-.->|"Realtime when Supabase env is set"| SupaRT
     SocketServer <--> RoomState
     ClientA -->|Post-Meeting Transcript| SummaryAPI
     SummaryAPI -->|Cloud LLM Prompt| GeminiCloud
@@ -44,11 +51,23 @@ graph TD
 
 ---
 
-## 2. WebRTC Mesh Signaling Protocol (Socket.io)
+## 2. WebRTC Mesh Signaling Protocol (Socket.io / Supabase Realtime)
 
-Milo runs an in-memory stateful signaling protocol over Socket.io. All media passes directly between browsers (P2P Mesh), while coordination, state, chat, whiteboard, and lobby approvals pass through the signaling server.
+Milo runs a stateful signaling protocol over WebSockets. All media passes directly between browsers (P2P Mesh), while coordination, state, chat, whiteboard, and lobby approvals pass through the signaling layer.
 
-**Deployment topology:** the signaling server is long-lived stateful process (`server.js`), so it cannot run in Vercel serverless functions. The client connects to `NEXT_PUBLIC_SIGNALING_URL` when set and otherwise to its own origin. Host signaling on a persistent Node host (Render/Railway/Fly), and point the Vercel frontend at it. For single-host deployments, `server.js` serves both Next.js and Socket.io.
+The meeting page talks to one transport-agnostic client (`lib/signaling.js`) that exposes the Socket.io `on`/`off`/`emit`/`id`/`disconnect` surface and picks a backend at runtime:
+
+| Condition | Backend | Module |
+| :--- | :--- | :--- |
+| `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` set | Supabase Realtime Broadcast + Presence | `lib/signalingSupabase.js` |
+| Otherwise | Socket.io on `server.js` (origin or `NEXT_PUBLIC_SIGNALING_URL`) | `socket.io-client` |
+
+**Deployment topologies:**
+- **Vercel + Supabase (no server to run):** set the two Supabase variables in Vercel and deploy. `next build` serves the app and `/api/summary`; signaling lives in Supabase Realtime. `server.js` is unused.
+- **Single Node host (Render/Railway/Fly/VPS):** `npm start` runs `server.js`, which serves Next.js and Socket.io on one URL.
+- **Split:** Vercel frontend + Node signaling host, wired with `NEXT_PUBLIC_SIGNALING_URL`.
+
+The Socket.io event contract in section 2.1 is the canonical protocol; the Supabase transport implements the same event names on the client side, so the meeting page and every in-call component are backend-agnostic.
 
 ### 2.1 Signaling Events Specification
 
@@ -76,10 +95,26 @@ Milo runs an in-memory stateful signaling protocol over Socket.io. All media pas
 
 Trickle ICE candidates may reach a peer **before** the associated SDP offer/answer. The client `WebRTCManager` (`lib/webrtc.js`) therefore keeps a per-peer `pendingCandidates` queue and a `remoteDescriptionSet` flag; candidates are buffered until the remote description is applied, then flushed in order. An inbound offer received while a local offer is pending triggers a `setLocalDescription({ type: 'rollback' })` (glare handling) so exactly one negotiation path survives. This guarantees bidirectional media on the first connection attempt.
 
+### 2.3 Supabase Realtime Transport (serverless / Vercel)
+
+`lib/signalingSupabase.js` implements the same client contract without any server process:
+
+| Concern | Socket.io server (`server.js`) | Supabase transport |
+| :--- | :--- | :--- |
+| Participant registry | `rooms` Map | Presence on `milo-lobby-<room>` + `milo-room-<room>` |
+| Host election | First joiner / `isHostIntent` | Presence sort: `isHostIntent` ➔ earliest `joinedAt` ➔ `peerId`; a 900 ms grace window prevents a guest from upstaging a host still subscribing |
+| Lobby admission | `waiting-room-request` + `host-lobby-decision` | Presence shows `admitted: false`; host sends a targeted `lobby-decision` broadcast |
+| Target a peer | `io.to(socketId)` | Broadcast with `payload.to === peerId`, receiver filters |
+| Room history | In-memory arrays | Each client keeps local history; host answers `state-request` with a `state-response` snapshot (strokes chunked at 300 segments to stay under the 256 KB message cap) |
+| Whiteboard stream | One `whiteboard-draw` per segment | Batched per 60 ms into `whiteboard-strokes` to respect Realtime rate limits |
+| Disconnect / host handoff | Socket `disconnect` handler | Presence `leave` ➔ `reconcileParticipants` + `recomputeHost` |
+| Reconnect | Socket.io auto-rejoin | Channel re-`SUBSCRIBED` re-emits `room-joined` with current peers to rebuild the mesh |
+
+The Supabase transport keeps no database tables: it needs only Broadcast + Presence, which are included in the free tier. Public channels carry the room code; anyone holding the project anon key and the room code could subscribe. That trust model is documented in the README, and private channels / Supabase Auth are the upgrade path for sensitive deployments.
+
 ---
 
 ## 3. Host Waiting Room State Machine
-
 ```mermaid
 stateDiagram-v2
     [*] --> GreenRoom: User visits /meet/[id]

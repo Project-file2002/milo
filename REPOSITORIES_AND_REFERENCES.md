@@ -25,6 +25,18 @@ This document serves as the master technical directory for any AI agent or softw
 | **peers/peerjs** | [https://github.com/peers/peerjs](https://github.com/peers/peerjs) | Clean browser-side abstraction for WebRTC ICE candidate negotiation, SDP offer/answer exchanges, and data channels. |
 | **feross/simple-peer** | [https://github.com/feross/simple-peer](https://github.com/feross/simple-peer) | Lightweight node-style EventEmitter for WebRTC peer connections. |
 
+### 2.1 Serverless signaling: Supabase Realtime + Vercel
+
+Vercel functions are request-scoped, so an in-memory Socket.io room cannot survive between invocations (and Vercel's 2026 WebSocket support pins each socket to one instance, still requiring external pub/sub). The practical serverless pattern is WebRTC P2P media plus Supabase Realtime for signaling:
+
+| Reference | URL | Key Patterns / Inspiration |
+| :--- | :--- | :--- |
+| **Supabase Realtime: Broadcast & Presence docs** | [https://supabase.com/docs/guides/realtime](https://supabase.com/docs/guides/realtime) | `channel.send({ type: 'broadcast' })`, `channel.track()` presence, `broadcast.self: false`, `removeChannel` teardown. Basis of `lib/signalingSupabase.js`. |
+| **Discussion: Using Supabase Realtime for WebRTC signaling** | [https://github.com/orgs/supabase/discussions/28473](https://github.com/orgs/supabase/discussions/28473) | Community approaches for offer/answer/ICE relay over Realtime; confirms the no-database Broadcast route Milo uses. |
+| **Realtime Broadcast/Presence Authorization** | [https://supabase.com/blog/supabase-realtime-broadcast-and-presence-authorization](https://supabase.com/blog/supabase-realtime-broadcast-and-presence-authorization) | Private channels + RLS policies — the upgrade path when room codes should not be the only secret. |
+| **Vercel WebSockets docs** | [https://vercel.com/docs/functions/websockets](https://vercel.com/docs/functions/websockets) | Documents instance pinning; explains why Milo keeps Socket.io for Node hosts and Supabase for Vercel. |
+
+
 ---
 
 ## 3. Real-Time Collaboration & Whiteboard Repositories

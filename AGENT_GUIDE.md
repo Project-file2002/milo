@@ -18,18 +18,23 @@ npm run build
 npm start
 
 # 4. Automated E2E verification (server must be running; uses local Chrome with fake media devices)
-npm install --no-save puppeteer-core
-node e2e-verify.mjs      # 20 checks: 2-peer WebRTC call, lobby, admit, chat, whiteboard sync, AI summary
+node e2e-verify.mjs      # 21 checks: 2-peer WebRTC call, lobby, admit, chat, whiteboard sync, AI summary, backend
 node e2e-signaling.mjs   # 16 checks: full Socket.io signaling protocol contract
 node e2e-features.mjs    # 28 checks: settings, device pickers, dropdown geometry, whiteboard nib accuracy, mobile viewport
 node e2e-ai-notes.mjs    # 6 checks: AI Notes panel, on-demand summary, post-call modal, exit-to-home
+
+# Supabase transport (local stack via Docker, or hosted project env vars)
+npx supabase start        # local Realtime + Postgres on http://127.0.0.1:54321
+node e2e-supabase.mjs     # 21 checks: lobby, relay, snapshots, host handoff
 ```
 
 **Optional Gemini summaries:** copy `.env.example` to `.env.local` and set `GEMINI_API_KEY=AIza...` (or paste a key into the AI Notes tab at runtime). Model defaults to `gemini-2.5-flash`; override with `GEMINI_MODEL`. Without a key the route returns a complete `smart-local` summary — AI Notes is fully usable with no setup. `.env*.local` is git-ignored.
 
 Once started, the application is live at `http://localhost:3000`.
 
-**Hosting:** Vercel cannot run `server.js` (no long-lived WebSockets in serverless functions). Host signaling on Render/Railway (build `npm install && npm run build`, start `npm start`), then deploy the frontend to Vercel with `NEXT_PUBLIC_SIGNALING_URL` pointing at that host. Local dev keeps same-origin signaling when the variable is unset. See [README.md](README.md).
+**Hosting (two supported paths):**
+- **Vercel + Supabase (no server):** set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the meeting page automatically uses `lib/signalingSupabase.js`. `server.js` is not needed on Vercel; Vercel runs `next build`. Free tier covers 200 concurrent Realtime connections, 2M messages/month, 100 msg/s, and 256 KB messages.
+- **Single Node host (Render/Railway/Fly/VPS):** `npm start` runs `server.js` (Next.js + Socket.io). For a Vercel frontend with a separate signaling host, set `NEXT_PUBLIC_SIGNALING_URL` (ignored when Supabase is configured). See [README.md](README.md).
 
 ---
 
@@ -68,13 +73,17 @@ e:\Projects\milo\
 │   └── AISummaryModal.jsx           # Post-meeting summary dialog with markdown export
 │
 ├── lib/
+│   ├── signaling.js                 # Transport factory: Supabase Realtime when configured, else Socket.io
+│   ├── signalingSupabase.js         # Socket.io-compatible Realtime transport (lobby, presence, snapshots)
+│   ├── supabaseClient.js            # Lazy singleton for @supabase/supabase-js (NEXT_PUBLIC_* env)
 │   ├── webrtc.js                    # WebRTC Mesh manager, ICE candidate queue, STUN, track swap, speaker detector
 │   └── settings.js                  # Persisted preferences (localStorage `milo.settings`) + Indian language list
 │
-├── e2e-verify.mjs                   # Puppeteer 2-peer call E2E (fake media devices) — 20 checks
+├── e2e-verify.mjs                   # Puppeteer 2-peer call E2E (fake media devices) — 21 checks
 ├── e2e-signaling.mjs                # Raw Socket.io protocol contract test — 16 checks
 ├── e2e-features.mjs                 # Settings, in-call features + mobile viewport test — 28 checks
-└── e2e-ai-notes.mjs                 # AI Notes generation + post-call summary modal — 6 checks
+├── e2e-ai-notes.mjs                 # AI Notes generation + post-call summary modal — 6 checks
+└── e2e-supabase.mjs                 # Supabase Realtime transport contract test — 21 checks
 ```
 
 ---
@@ -96,6 +105,7 @@ When editing or adding video/audio features, strictly observe these rules:
 10. **Whiteboard Canvas Sizing & Cursor:** Stroke coordinates are CSS pixels mapped through `ctx.setTransform(buffer/CSS ratio)`. Never size the canvas buffer once at mount — a `ResizeObserver` keeps it in sync (DPR included). The pen/eraser must stay a DOM element positioned from the same coordinates (native `cursor: none`), otherwise the nib visually detaches from the ink at DPI scaling or after layout changes.
 11. **AI Summary Transcript Contract:** Only finalized speech results are appended to `captionsLog` — interim fragments would flood the prompt and degrade summaries. `LiveCaptions` stores `onCaptionLogged` in a ref so parent re-renders never restart recognition (inline callbacks were causing transcript gaps). `/api/summary` must always return a usable `smart-local` summary when no key is configured; never fail just because `GEMINI_API_KEY` is absent.
 12. **Never Drop a Renegotiation:** If `setLocalStream`/`replaceTrack` must add senders while `signalingState !== 'stable'`, queue the peer in `pendingNegotiations` and offer on the next `stable` transition. Dropping it yields intermittent one-way video (`readyState 0`, blank remote tile) verified in E2E. Keep one remote track per kind and call `video.play()` after attaching `srcObject`.
+13. **Every Signaling Event Exists Twice:** The meeting page only knows Socket.io-style `on`/`emit`. A new event must be implemented in **both** `server.js` (Socket.io host) and `lib/signalingSupabase.js` (Realtime transport), or hosted-on-Vercel calls silently lose that feature. Keep Supabase broadcasts targeted with a `to` field, keep messages under 256 KB (chunk long payloads like whiteboard snapshots), and never remove a channel while an unflushed stroke batch is pending.
 
 ---
 

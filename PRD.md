@@ -23,7 +23,7 @@
 | **Heavy Data Consumption:** Rural Indian 4G/3G connections experience stutter, lag, and high data bills. | **'Low Data' Saver Mode:** Automatically caps video bitrate to 120kbps / 15fps or audio-only with dynamic bandwidth throttling. |
 | **Language Barriers:** Captions are predominantly English-only; lack of live regional Indian transcriptions. | **Real-Time Multilingual Indian Captions:** Live speech-to-text in Hindi, Marathi, Tamil, Telugu, Bengali, Gujarati, Kannada, and Indian English. |
 | **Manual Meeting Minutes:** Taking notes distracts participants from the conversation. | **Milo AI Meeting Assistant:** Generates instant executive summaries, Hindi translations, and action item checklists post-meeting using Gemini API / smart NLP. |
-| **Expensive Paid Licenses:** High monthly per-host fees for basic collaboration features. | **100% Free & Open Ecosystem:** Built using standard WebRTC, Next.js, and Socket.io with zero cloud lock-in. |
+| **Expensive Paid Licenses:** High monthly per-host fees for basic collaboration features. | **100% Free & Open Ecosystem:** Built using standard WebRTC, Next.js, and Socket.io/Supabase Realtime with zero cloud lock-in. |
 
 ---
 
@@ -102,6 +102,7 @@
 2. **Bandwidth Optimization:** Standard HD mode: ~1.2–1.5 Mbps; Low Data mode: ≤ 150 kbps.
 3. **Compatibility:** Desktop & Mobile browsers (Chrome, Edge, Firefox, Safari, Brave, Samsung Internet).
 4. **Data Privacy & Security:**
-   - Ephemeral in-memory socket rooms (no recording or message persistence on disk without user consent).
+   - Ephemeral signaling state (no recording or message persistence on disk without user consent); the Supabase option stores room state only in participant memory and uses public Realtime channels keyed by room code.
    - Compliant with Indian Information Technology (IT) Rules & Digital Personal Data Protection (DPDP) principles.
-5. **Token & Developer Efficiency:** Clean modular codebase following Next.js App Router conventions with zero unnecessary bloat.
+5. **Deployment Flexibility:** Runs on either a single Node host (`server.js` with Socket.io) or fully serverless on Vercel with Supabase Realtime, with no database or paid service required for small teams.
+6. **Token & Developer Efficiency:** Clean modular codebase following Next.js App Router conventions with zero unnecessary bloat.

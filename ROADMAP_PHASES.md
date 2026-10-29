@@ -130,11 +130,25 @@ This document tracks the phased implementation of the **Milo** video conferencin
 - [x] Test mobile viewport responsive layout (< 768px).
 
 **Automated Verification Harness (added in Phase 7):**
-- `e2e-verify.mjs` — 20 checks: Puppeteer drives two real Chrome instances (fake camera/mic devices) through host create ➜ guest lobby ➜ waiting-room admit ➜ bidirectional WebRTC video render ➜ chat ➜ reactions ➜ whiteboard pixel-level cross-peer sync ➜ AI summary ➜ clean leave/teardown.
+- `e2e-verify.mjs` — 21 checks: Puppeteer drives two real Chrome instances (fake camera/mic devices) through host create ➜ guest lobby ➜ waiting-room admit ➜ bidirectional WebRTC video render ➜ chat ➜ reactions ➜ whiteboard pixel-level cross-peer sync ➜ AI summary ➜ clean leave/teardown, plus an assertion that reports the active signaling backend (`socketio` or `supabase`).
 - `e2e-signaling.mjs` — 16 checks: raw Socket.io clients verify every ARCHITECTURE.md protocol event (lobby admit/deny, late-joiner chat + whiteboard state replay, captions, hand raise, mute sync, breakout create/close, host reassignment on host leave).
 - `e2e-features.mjs` — 28 checks: settings dialog (gear, camera preview, mic test meter, persistence, reset, close), lobby mic level meter, device dropdown clipping + Escape close, Low Data badge on/off, hand-raised tile indicator, captions bar with all Indian language options, breakout creation UI, reaction tray, mic + camera device pickers, pen/eraser custom cursors, nib-to-ink accuracy, smooth-stroke rendering, mobile 390px viewport (lobby, tile fit, control bar).
 - `e2e-ai-notes.mjs` — 6 checks: AI Notes panel opens, on-demand summary generation (no API key required), action-items section, post-call summary modal on Leave, and closing the modal exits home instead of re-entering the call.
-- Final run: **70/70 checks passed**; `npm run build` compiles clean.
+- `e2e-supabase.mjs` — 21 checks: runs the real Supabase Realtime transport against a local/hosted project — lobby admission, relayed offer, chat, whiteboard batching, hand raise, reactions, media state, breakouts, captions, late-joiner lobby + chat + stroke snapshots, denial, and host handoff on disconnect.
+- Final run: **71/71 Socket.io checks** (21 + 16 + 28 + 6), **21/21 Supabase protocol checks**, and **55/55 browser checks in Supabase mode** (verify + features + AI notes); `npm run build` compiles clean.
+
+### Phase 8: Vercel + Supabase Serverless Deployment
+- [x] `lib/signaling.js` transport factory: Supabase Realtime when `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` exist, Socket.io otherwise.
+- [x] `lib/signalingSupabase.js`: Socket.io-compatible client over two public Realtime channels per room (lobby + room), presence host election with a 900 ms grace window, targeted broadcasts, admission flow, and reconnection remesh.
+- [x] Room history without a database: host answers `state-request` with chunked `state-response` snapshots (chat, strokes, breakouts); strokes batch every 60 ms; snapshots stay under the 256 KB message cap.
+- [x] Meeting page switched to the transport factory; `window.__MILO_SIGNALING__` reports the active backend.
+- [x] Whiteboard listeners now remove only their own handlers, keeping the page's stroke history alive after the board closes.
+- [x] Denied guests untrack presence so the host's waiting list clears immediately.
+- [x] Supabase transport allows an injected client so independent participants (tests) do not share a channel registry.
+- [x] Verified end-to-end: protocol suite 21/21 against local Supabase; browser 2-peer call 21/21, features 28/28, AI notes 6/6 with `__MILO_SIGNALING__ === 'supabase'`; Socket.io fallback 71/71 afterwards.
+
+**Deployment limits (free tier):** 200 concurrent Realtime connections, 2M messages/month, 100 msg/s, 256 KB/message. Public channels are keyed by room code; add Supabase Auth + private channels for sensitive rooms.
+
 
 **Bugs found & fixed during Phase 7 verification:**
 - [x] **ICE candidate race (one-way media):** Trickle candidates arriving before `setRemoteDescription` were silently dropped, breaking the return media path. `lib/webrtc.js` now queues pending candidates per peer and flushes them once the remote description is applied; also handles offer glare via rollback.
